@@ -1,0 +1,37 @@
+name: LCK 무료 수집
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/free-feed.yml']
+  workflow_dispatch:
+  schedule:
+    - cron: '3-59/10 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: stovewatch-free-feed
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: toJSON(github.event.repository.private) == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: 첫 실행 시 검증된 소스 설치
+        shell: bash
+        run: |
+          if [[ -f scripts/publish-free-feed.mjs ]]; then exit 0; fi
+          echo '84192f4a6ed04fe1abe34b0ba8d413c62e00e829f0673c93ffc76cbf628b46a3  stove-watch-free.zip' | sha256sum --check
+          unzip -n -q stove-watch-free.zip -x '.github/*' 'dist/*'
+          node scripts/test.mjs
+          git add -- .env.example .gitattributes .nojekyll README.md index.html package.json public scripts start.cmd worker
+          git -c user.name='Stove Watch' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m 'Install verified LCK site and collector sources'
+          git push origin HEAD:main
+      - name: 공개 피드 갱신
+        run: node scripts/publish-free-feed.mjs
