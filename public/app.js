@@ -1,5 +1,12 @@
-(() => {
+(function startStoveWatch() {
   'use strict';
+  if (typeof KOREAN==='undefined') {
+    const loader=document.createElement('script');
+    loader.src=new URL('korean.js',document.currentScript?.src || document.baseURI).href;
+    loader.onload=startStoveWatch;
+    document.head.append(loader);
+    return;
+  }
   const $ = s => document.querySelector(s);
   const esc = v => String(v ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const glyphs = {
@@ -18,6 +25,19 @@
   const {teams,roles,labels,events:seed}=STOVE;
   const get=(key,def)=>{try {const v=localStorage.getItem('sw27.'+key);return v===null?def:JSON.parse(v)}catch{return def}};
   const save=(key,value)=>{try{localStorage.setItem('sw27.'+key,JSON.stringify(value))}catch{}};
+  let translations=get('koreanTranslations', {});
+  if (!translations || typeof translations!=='object' || Array.isArray(translations)) translations={};
+  function ko(value) {
+    if (!value) return '';
+    return KOREAN.lookup(value,translations) || '한국어 번역 대기 중';
+  }
+  function translatedEvidence(value) {
+    if (!value) return '';
+    const translated=ko(value);
+    if(translated===value) return '<p>'+esc(value)+'</p>';
+    const label=KOREAN.edited.has(value)?'원문 보기':KOREAN.lookup(value,translations)?'자동 번역 · 원문 보기':'원문 보기';
+    return '<p>'+esc(translated)+'</p><details class="evidence-meta"><summary>'+label+'</summary><p lang="">'+esc(value)+'</p></details>';
+  }
   const safeUrl=url=>{try{const u=new URL(url); return u.protocol==='https:' ? u.href : ''}catch{return ''}};
   const storedWatched=get('stars',[]);let watched=Array.isArray(storedWatched)?storedWatched.filter(t=>teams[t]):[];
   let focusTeam=watched[0]||'GEN', filtering='all',onlyWatch=false,limit=7,selectedDay='',modalMode='',busy=false;
@@ -39,7 +59,7 @@
     const team=teams[e.team];
     const official=isOfficial(e);
     const start=e.tip?'<button type="button" data-tip="'+esc(e.tip)+'"':official?'<button data-official="'+esc(e.id)+'"':e.claim?'<button type="button" data-claim="'+esc(e.claim)+'"':'<a href="'+esc(safeUrl(e.url))+'" target="_blank" rel="noopener noreferrer"';
-    return start+' class="event'+(first?' featured':'')+'"><time datetime="'+esc(e.at)+'">'+(e.dateOnly?'시각 미상':hm(e.at))+'</time><div><div class="chips"><span class="pill '+e.kind+'">'+esc((official?'오피셜 · ':'')+labels[e.kind])+'</span>'+ (team?'<span class="team-tag" style="--team:'+team.color+'">'+team.id+'</span>':'')+(e.player?'<span class="player-tag">'+esc(e.player)+'</span>':'')+'</div><h3>'+esc(e.title)+'</h3><small>'+esc(e.source)+(official?' · 근거 '+e.links.length+'개':'')+'</small></div><span class="ext">'+icon(e.claim?'log':'external')+'</span>'+(official||e.claim||e.tip?'</button>':'</a>');
+    return start+' class="event'+(first?' featured':'')+'"><time datetime="'+esc(e.at)+'">'+(e.dateOnly?'시각 미상':hm(e.at))+'</time><div><div class="chips"><span class="pill '+e.kind+'">'+esc((official?'오피셜 · ':'')+labels[e.kind])+'</span>'+ (team?'<span class="team-tag" style="--team:'+team.color+'">'+team.id+'</span>':'')+(e.player?'<span class="player-tag">'+esc(e.player)+'</span>':'')+'</div><h3>'+esc(ko(e.title))+'</h3><small>'+esc(e.source)+(official?' · 근거 '+e.links.length+'개':'')+'</small></div><span class="ext">'+icon(e.claim?'log':'external')+'</span>'+(official||e.claim||e.tip?'</button>':'</a>');
   }
   function showTimeline(){
     tipControls();
@@ -79,8 +99,8 @@
     return [by,c.source||''].filter((s,i)=>s&&(i===0||!by.includes(s))).join(' · ')||'커뮤니티 전언';
   }
   function tipTitle(c){
-    if(c.passage)return [c.team&&teams[c.team]?.name,c.player,RUMORS.stages[c.stage]].filter(Boolean).join(' · ')+(c.team||c.player?'':' · '+(c.note||'').slice(0,100));
-    return c.topic || [c.team,c.player,RUMORS.stages[c.stage]].filter(Boolean).join(' · ');
+    if(c.passage)return [c.team&&teams[c.team]?.name,c.player,RUMORS.stages[c.stage]].filter(Boolean).join(' · ')+(c.team||c.player?'':' · '+ko(c.note).slice(0,100));
+    return c.topic ? ko(c.topic) : [c.team,c.player,RUMORS.stages[c.stage]].filter(Boolean).join(' · ');
   }
   function tipRows(items){
     const byArticle=new Map();
@@ -103,7 +123,7 @@
       const mentioned=(c.mentions||[]).filter(id=>id!==c.person&&!(c.authors||[]).includes(id)).map(id=>RUMORS.people[id]?.name).filter(Boolean);
       const group=c.scope!=='desk'&&groups.find(g=>g.id===RUMORS.key(c));
       const status=group?'<button class="candidate-link" data-claim="'+esc(group.id)+'">'+esc(group.team+' · '+group.player+' · '+statusText[group.status])+'</button>':'';
-      return '<article class="evidence-item"><div class="evidence-top">'+badge(RUMORS.tier(c))+'<strong>'+esc(RUMORS.stages[c.stage])+'</strong></div><p>'+esc(c.note||c.topic)+'</p><span class="evidence-meta">'+esc(sourceName(c)+' · '+(RUMORS.forms[c.form]||'출처 기록'))+'</span>'+(mentioned.length?'<p class="evidence-meta">본문에 언급된 인물 · '+esc(mentioned.join(', '))+'</p>':'')+((c.originTeam&&teams[c.originTeam])?'<p class="evidence-meta">원소속 · '+esc(c.originLabel||teams[c.originTeam].name)+'</p>'+(c.originProof?link(c.originProof,'원소속 근거'):''):'')+status+origin+'</article>';
+      return '<article class="evidence-item"><div class="evidence-top">'+badge(RUMORS.tier(c))+'<strong>'+esc(RUMORS.stages[c.stage])+'</strong></div>'+translatedEvidence(c.note||c.topic)+'<span class="evidence-meta">'+esc(sourceName(c)+' · '+(RUMORS.forms[c.form]||'출처 기록'))+'</span>'+(mentioned.length?'<p class="evidence-meta">본문에 언급된 인물 · '+esc(mentioned.join(', '))+'</p>':'')+((c.originTeam&&teams[c.originTeam])?'<p class="evidence-meta">원소속 · '+esc(c.originLabel||teams[c.originTeam].name)+'</p>'+(c.originProof?link(c.originProof,'원소속 근거'):''):'')+status+origin+'</article>';
     }).join('');
     setModal(heading,'<p class="evidence-meta">'+esc(day(first.at)+(first.dateOnly?'':' '+hm(first.at)+' KST')+(first.observed?' · 최초 감지':' · 게시일'))+'</p>'+link(first.originUrl||first.url,'기사·게시물 원문')+blocks);
   }
@@ -130,7 +150,7 @@
     const paths=[...(g.history||g.evidence),...g.closures].sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).map(c=>{
       const who=sourceName(c);
       const form=c.closed?'정정·종료 기록':RUMORS.forms[c.form]||'색인 링크';
-      return '<article class="evidence-item"><div class="evidence-top">'+badge(RUMORS.tier(c))+'<strong>'+esc(who)+'</strong></div><span class="evidence-meta">'+esc(day(c.at))+(c.dateOnly?'':' '+hm(c.at)+' KST')+(c.observed?' 최초 감지':'')+' · '+esc(form)+' · '+esc(RUMORS.stages[c.stage])+'</span><p>'+esc(c.note)+'</p>'+link(c.url,c.form==='direct'?'최초 출처 보기':c.form==='reading'?'팬 해석 글 보기':c.form==='relay'?'재인용 기록 보기':'연결된 출처 보기')+(c.indexUrl?' '+link(c.indexUrl,'수집 색인'):'')+'</article>';
+      return '<article class="evidence-item"><div class="evidence-top">'+badge(RUMORS.tier(c))+'<strong>'+esc(who)+'</strong></div><span class="evidence-meta">'+esc(day(c.at))+(c.dateOnly?'':' '+hm(c.at)+' KST')+(c.observed?' 최초 감지':'')+' · '+esc(form)+' · '+esc(RUMORS.stages[c.stage])+'</span>'+translatedEvidence(c.note)+link(c.url,c.form==='direct'?'최초 출처 보기':c.form==='reading'?'팬 해석 글 보기':c.form==='relay'?'재인용 기록 보기':'연결된 출처 보기')+(c.indexUrl?' '+link(c.indexUrl,'수집 색인'):'')+'</article>';
     }).join('');
     const alt=(a)=>'<button class="candidate-link" data-claim="'+esc(a.id)+'">'+esc(teams[a.team].id+' '+a.player)+'</button>';
     const why=g.kind==='near'?'거피셜 근거 · 추적 소식통의 직접 발언이나 기명 취재에서 이 선수의 합의·합류를 구체적으로 전했습니다.':g.kind==='report'?'보도 근거 · 기명 취재에서 거론된 선수입니다. 기사에 명시된 협상 단계를 아래에 표시합니다.':'찌라시 근거 · 후보와 접촉, 발언·전언을 원문에 나온 단계로 기록합니다.';
@@ -215,7 +235,7 @@
       const sources=[...(p.x?[row('https://x.com/'+p.x,'X · @'+p.x,manual)]:[]),...(p.youtube?[row('https://www.youtube.com/channel/'+p.youtube,'YouTube',healthFor('yt-'+p.id))]:[]),...(p.weibo?[row(p.profile,'웨이보 원계정',manual)]:[])];
       return '<article class="panel desk-card"><h3>'+esc(p.name)+'</h3><small>'+esc(p.role)+'</small>'+sources.join('')+row(p.profile||p.proof,'공개 출처 · 이름 언급 기사',healthFor('person-'+p.id),'이름 언급 기사 추적')+'<button class="candidate-link" data-person="'+esc(p.id)+'">발언 흐름 '+claims.length+'건</button></article>';
     }).join('');
-    if(deskMode==='review')html=reviewItems.length?reviewItems.map(r=>'<article class="panel desk-card">'+link(r.url,r.title)+'<small>'+esc(r.source+' · '+r.reason+' · '+day(r.at)+' '+hm(r.at))+'</small></article>').join(''):'<p class="meta-note">아직 수신한 새 게시물이 없습니다. 수집기가 확인한 기사와 판독이 필요한 게시물이 여기에 쌓입니다.</p>';
+    if(deskMode==='review')html=reviewItems.length?reviewItems.map(r=>'<article class="panel desk-card">'+link(r.url,ko(r.title))+'<small>'+esc(r.source+' · '+r.reason+' · '+day(r.at)+' '+hm(r.at))+'</small></article>').join(''):'<p class="meta-note">아직 수신한 새 게시물이 없습니다. 수집기가 확인한 기사와 판독이 필요한 게시물이 여기에 쌓입니다.</p>';
     $('#deskBody').innerHTML=html;
   }
   function personFlow(id){
@@ -223,7 +243,7 @@
     const flow=statements.filter(c=>RUMORS.participants(c).includes(id));
     const html=flow.map(e=>{
       const label=e.person===id||(e.authors||[]).includes(id)?(RUMORS.forms[e.form]||'출처 기록'):'다른 출처에서 언급';
-      return '<article class="evidence-item"><div class="evidence-meta">'+esc(day(e.at)+(e.dateOnly?'':' '+hm(e.at))+' · '+label)+'</div><button class="candidate-link" data-tip="'+esc(RUMORS.canon(e.originUrl||e.url))+'">'+esc(tipTitle(e))+'</button><p>'+esc(e.note)+'</p>'+link(e.url,'원문')+'</article>';
+      return '<article class="evidence-item"><div class="evidence-meta">'+esc(day(e.at)+(e.dateOnly?'':' '+hm(e.at))+' · '+label)+'</div><button class="candidate-link" data-tip="'+esc(RUMORS.canon(e.originUrl||e.url))+'">'+esc(tipTitle(e))+'</button>'+translatedEvidence(e.note)+link(e.url,'원문')+'</article>';
     }).join('');
     setModal(p.name+' · 발언 흐름',html||'<p>선수와 행선지를 대조한 발언이 아직 없습니다.</p>'+link(p.profile||p.proof,'공개 출처 보기'));
   }
@@ -251,7 +271,7 @@
   }
   function hero(){
     if(!latest) return;
-    $('#latestText').textContent=latest.title;$('#latestEvent').href=latest.url;$('#latestEvent').target='_blank';$('#latestEvent').rel='noopener';
+    $('#latestText').textContent=ko(latest.title);$('#latestEvent').href=latest.url;$('#latestEvent').target='_blank';$('#latestEvent').rel='noopener';
     $('#stokes').textContent=Number(get('fire-'+latest.id,0))||0;
     tick();
   }
@@ -317,6 +337,10 @@
       if(!Array.isArray(data.events)||!Array.isArray(data.sources))throw Error('invalid');
       if(data.mode==='snapshot'){
         $('#syncText').textContent='저장본';$('#networkInfo').textContent='저장된 소식입니다. 무료 수집 서버가 연결되면 갱신됩니다.';return;
+      }
+      if (data.koreanTranslations && typeof data.koreanTranslations==='object' && !Array.isArray(data.koreanTranslations)) {
+        translations={...translations,...data.koreanTranslations};
+        save('koreanTranslations',translations);
       }
       const updated=LEDGER.merge([...savedFeed,...data.events]);
       for(const src of data.rumorSources||[])if(src.ok&&Array.isArray(src.claims)&&['archive','index','sheep'].includes(src.id))rumorCache[src.id]=src.claims.filter(LCK.matcher(updated));
