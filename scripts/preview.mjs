@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {translateFeed} from './translate.mjs';
 import worker,{sweep} from '../dist/server/index.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 try{process.loadEnvFile(path.join(root,'.env'))}catch(error){if(error.code!=='ENOENT')throw error}
@@ -10,9 +11,14 @@ await fs.mkdir(directory,{recursive:true});
 const filename=path.join(directory,'season-2027.json');
 let current;
 try{current=await fs.readFile(filename,'utf8');JSON.parse(current)}catch(e){if(e.code!=='ENOENT')throw e}
+let localTranslations=current ? (JSON.parse(current).koreanTranslations || {}) : {};
 const env={ARCHIVE:{
   get:async()=>current||null,
-  put:async(key,value)=>{const next=filename+'.tmp-'+process.pid;await fs.writeFile(next,value,{encoding:'utf8',mode:0o600});await fs.rename(next,filename);current=value}
+  put:async(key,value)=>{
+    const snapshot=JSON.parse(value);
+    const koreanTranslations=await translateFeed({events:snapshot.events,reviews:snapshot.reviews,rumorSources:[{claims:snapshot.claims}]},localTranslations);
+    value=JSON.stringify({...snapshot,koreanTranslations});
+    const next=filename+'.tmp-'+process.pid;await fs.writeFile(next,value,{encoding:'utf8',mode:0o600});await fs.rename(next,filename);current=value;localTranslations=koreanTranslations}
 }};
 const server=http.createServer(async(req,res)=>{
   try{
