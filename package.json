@@ -1,0 +1,11 @@
+{
+  "name": "stove-watch-lck",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/preview.mjs",
+    "validate": "node scripts/validate-artifact.mjs",
+    "test": "node scripts/test.mjs"
+  }
+}
