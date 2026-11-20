@@ -81,7 +81,7 @@ function publicFeed(snapshot={}){
   const scoped=LCK.batch(snapshot);
   const sources=Object.values(snapshot.progress||{}).map(({checkpoint,failures,...s})=>s);
   const ok=sources.some(s=>s.ok);
-  return {events:scoped.events,sources,checkedAt:snapshot.checkedAt||null,reviews:scoped.reviews.slice(0,300),
+  return {events:scoped.events,sources,koreanTranslations:snapshot.koreanTranslations || {},checkedAt:snapshot.checkedAt||null,reviews:scoped.reviews.slice(0,300),
     rumorSources:[{id:'archive',ok:!!snapshot.checkedAt,claims:scoped.claims}],collector:!snapshot.checkedAt?'waiting':ok?'running':'unavailable'};
 }
 export default {
