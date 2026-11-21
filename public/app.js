@@ -79,7 +79,7 @@
     if(filtering==='media')values=[...news.filter(e=>e.kind==='press'),...tipRows(reports)];
     else if(filtering==='rumor')values=tipRows(visible.filter(c=>timelineTier(c)==='rumor'&&(tipSource==='any'||tipChannel(c)===tipSource)));
     else if(filtering==='near')values=[...active.filter(e=>e.kind==='near'),...tipRows(items.filter(c=>c.scope==='desk'&&RUMORS.tier(c)==='near'))];
-    else if(filtering==='all')values=[...news,...active,...tipRows(visible.filter(c=>c.scope==='desk'))];
+    else if(filtering==='all')values=[...news,...active,...tipRows(visible.filter(c=>c.scope==='desk'||(timelineTier(c)==='report'&&RUMORS.tier(c)==='rumor')))];
     else values=news.filter(e=>filtering==='official'?isOfficial(e):e.kind===filtering);
     values.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
     let last='';
