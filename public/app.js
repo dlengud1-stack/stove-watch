@@ -68,12 +68,18 @@
     const reports=items.filter(LCK.isReport);
     const covered=new Set(reports.flatMap(c=>[RUMORS.canon(c.url),RUMORS.canon(c.originUrl||c.url)]));
     const news=events.filter(e=>follows(e)&&(e.kind!=='press'||!covered.has(RUMORS.canon(e.url))));
-    const active=groups.filter(g=>g.status==='active'&&follows(g)).map(eventFromGroup);
+    const visible=items.filter(showCommunityClaim);
+    const active=groups.filter(g=>g.status==='active'&&follows(g)).flatMap(g=>{
+      if(g.kind!=='rumor'||includeDiscussion)return [eventFromGroup(g)];
+      const evidence=g.evidence.filter(isTransferTip);
+      if(!evidence.length)return [];
+      return [eventFromGroup({...g,evidence,at:evidence[0].at,dateOnly:evidence[0].dateOnly})];
+    });
     let values;
     if(filtering==='media')values=[...news.filter(e=>e.kind==='press'),...tipRows(reports)];
-    else if(filtering==='rumor')values=tipRows(items.filter(c=>RUMORS.tier(c)==='rumor'&&(tipSource==='any'||tipChannel(c)===tipSource)));
+    else if(filtering==='rumor')values=tipRows(visible.filter(c=>RUMORS.tier(c)==='rumor'&&(tipSource==='any'||tipChannel(c)===tipSource)));
     else if(filtering==='near')values=[...active.filter(e=>e.kind==='near'),...tipRows(items.filter(c=>c.scope==='desk'&&RUMORS.tier(c)==='near'))];
-    else if(filtering==='all')values=[...news,...active,...tipRows(items.filter(c=>c.scope==='desk'))];
+    else if(filtering==='all')values=[...news,...active,...tipRows(visible.filter(c=>c.scope==='desk'))];
     else values=news.filter(e=>filtering==='official'?isOfficial(e):e.kind===filtering);
     values.sort((a,b)=>Date.parse(b.at)-Date.parse(a.at));
     let last='';
@@ -88,10 +94,53 @@
   function badge(kind){return '<span class="pill '+kind+'">'+esc(labels[kind])+'</span>'}
   function link(url,label){const href=safeUrl(url);return href?'<a class="evidence-link" target="_blank" rel="noopener noreferrer" href="'+esc(href)+'">'+esc(label)+icon('external')+'</a>':''}
   let tipSource='any',statements=[];
+  let includeDiscussion=get('communityDiscussion',false)===true;
+  const communityDomains=[...new Set(WATCHLIST.communities.map(c=>c.domain))];
+  const playerLabels=Object.values(LCK.playerNames).concat(['클라우드','스카웃','너구리','씨맥','감독','코치']);
+  const playerIds=new Set(Object.keys(LCK.playerNames).concat(['Cloud','Scout','Nuguri','cvMax','SMK']).map(name=>name.toLowerCase()));
+  const sourceAliases=WATCHLIST.people.flatMap(p=>p.aliases||[]).filter(v=>v.length>=2).map(v=>v.toLowerCase());
+  const rosterClaim=/영입|이적|재계약|계약|협상|협의|오퍼|접촉|합류|복귀|복귀설|콜업|승격|잔류|방출|은퇴|트레이드|바이아웃|입단|결렬|물망|노린|노리|행선지|팀을\s*떠|[가-힣A-Za-z0-9](?:행|행설)(?:[^\p{L}]|이|을|은|$)|\b(?:join(?:s|ing)?|sign(?:s|ed|ing)?|talks|offer(?:ed)?|agreement|renew(?:al|ed)?|transfer|leav(?:e|ing)|retir(?:e|es|ing)|trade|return(?:s|ing)?|contract)\b|加盟|加入|签约|簽約|续约|續約|转会|轉會|接触|接觸|沟通|溝通|报价|報價|离队|離隊|退役|重返|回归|回歸|回LCK|洽谈|争取|爭取|落笔|落筆|锁定|鎖定|租借/iu;
+  const lineup=/로스터|라인업|행선지|차기\s*팀|阵容|陣容|名单|名單|\b(?:roster|lineup)\b/i;
+  const attribution=/에\s*따르면|피셜|(?:기자|관계자|소식통|에이전트|썰쟁이|지인)(?:발|가|는|이|에\s*따르면|한테|에게|[)\s:：])|(?:방송|인터뷰|기사)(?:에서|발)|전해\s*들|들었|들[은린]\s*썰|제보|단독|유출|소식통|전언|(?:영입|이적|복귀|은퇴|합류|계약|행)설|한다더라|한다는\s*(?:썰|말|얘기)|\b(?:sources?|insider|reportedly|report(?:s|ed)?|leak(?:s|ed)?|according to)\b|爆料|消息|小道|传闻|傳聞|据报|據報|韩媒|韓媒|外媒|透露/i;
+  const commitment=/구두\s*합의|협상\s*(?:중|결렬|재개|불발)|(?:영입|합류|복귀|은퇴|재계약|이적|계약)\s*(?:임박|유력|예정|합의|불발|확정|거절|결렬)|오퍼(?:를)?\s*(?:넣|보냈|받|제시)|접촉(?:했|한|중)|계약(?:을)?\s*체결|(?:이적|영입|재계약|합류|복귀|잔류|은퇴)(?:한대|한다더라|한다던데|하기로)|\b(?:in talks|set to join|verbal agreement|agreed to|offered a contract)\b|即将|即將|大概率|确定签约|確定簽約|达成协议|達成協議|有望加盟/i;
+  const discussion=/[?？]|어떰|어떻게\s*생각|어떨까|아니냐|맞(?:냐|음)|뭐[임냐]|궁금|개인적|갠적|상상해|만약|가정해|내가\s*예상|내\s*(?:희망|예상)|희망\s*(?:로스터|회로)|(?:영입|복귀|이적|합류)(?:하면|한다면)|했으면|좋겠|같은데|같지\s*않|거\s*같|더\s*(?:세|쎄|강)|마음에\s*듬|[ㅋㅎ]{2,}|如何评价|怎么评价|怎麼評價|怎么看|怎麼看|要是|假如|我觉得|我覺得|\b(?:what if|wish|hope|my prediction|thoughts|should|imagine)\b/i;
+  const recap=/스토브\s*(?:현황|정리)|(?:이적시장|이적\s*현황)\s*(?:총?정리|업데이트)|(?:^|[\s)\]])오피셜\s*[):：]|发布人员变动公告|發布人員變動公告|发布.{0,25}(?:告别|祝福)视频|發布.{0,25}(?:告別|祝福)影片|각\s*팀.{0,8}로스터\s*(?:정리|모음)/i;
+  function boardUrl(url){
+    const host=LCK.hostOf(url);
+    if(host==='inven.co.kr'||host.endsWith('.inven.co.kr'))return /\/board\//i.test(url);
+    return communityDomains.some(domain=>host===domain||host.endsWith('.'+domain));
+  }
   function tipChannel(c){
+    if(boardUrl(c.originUrl||c.url))return 'community';
     if(LCK.isReport(c))return 'media';
-    if(c.form==='reading'||['커뮤니티','팬 해석'].includes(RUMORS.people[c.person]?.type)||/커뮤니티|갤러리|게시판/.test(c.source||''))return 'community';
+    if(c.form==='reading'||RUMORS.people[c.person]?.type==='커뮤니티'||/커뮤니티|갤러리|게시판/.test(c.source||''))return 'community';
     return 'people';
+  }
+  function isTransferTip(c){
+    if(tipChannel(c)!=='community')return true;
+    if(c.form==='index')return false;
+    const original=c.passage?c.note:(c.topic||c.note||'');
+    if(!original||recap.test(original))return false;
+    const segments=original.split(/[。！!；;]|(?<=[?？])\s*/u).map(part=>part.trim()).filter(Boolean);
+    const namedSource=Boolean(c.person||c.authors?.length||c.mentions?.length)||sourceAliases.some(name=>original.toLowerCase().includes(name));
+    const quoted=namedSource||attribution.test(original)||/쉽이스포츠|羊刀社|Sheep\s*Esports/i.test(original)||Boolean(c.originUrl&&c.originUrl!==c.url);
+    // Some titles introduce the source in one sentence and the claim in the next.
+    const hasTeam=Boolean(c.team||c.originTeam||c.destination)||LCK.teamIds(original).length>0||/\bLCK\b|韩华|韓華|한화|딮기|키움/i.test(original);
+    const hasPerson=Boolean(c.player)||playerLabels.some(name=>original.includes(name))||
+      (original.match(/[a-z][a-z0-9]*/gi)||[]).some(word=>playerIds.has(word.toLowerCase()));
+    if(!c.topic&&c.person&&c.player&&c.team&&['direct','relay','reading'].includes(c.form))return true;
+    return segments.some(part=>{
+      if(discussion.test(part))return false;
+      const action=rosterClaim.test(part);
+      const namedLineup=hasPerson&&hasTeam&&/(?:이라|라고)\s*(?:했|전했)|(?:GEN|KRX|DK|T1)[锁盯]/i.test(part);
+      if(quoted&&(hasPerson||hasTeam)&&(action||lineup.test(part)||namedLineup||/발표|힌트|官宣|优先选择LCK|優先選擇LCK/i.test(part)))return true;
+      if(!hasPerson||!hasTeam)return false;
+      if(commitment.test(part))return true;
+      return part.length<=65&&/(?:영입|합류|복귀|재계약|은퇴|계약\s*종료|행\s*유력)(?:[.!…]|$)|(?:退役|续约|續約|离队|離隊)$/.test(part);
+    });
+  }
+  function showCommunityClaim(c){
+    return includeDiscussion||isTransferTip(c);
   }
   function sourceName(c){
     const names=[...new Set([c.person,...(c.authors||[])].map(id=>RUMORS.people[id]?.name).filter(Boolean))];
@@ -128,8 +177,14 @@
     setModal(heading,'<p class="evidence-meta">'+esc(day(first.at)+(first.dateOnly?'':' '+hm(first.at)+' KST')+(first.observed?' · 최초 감지':' · 게시일'))+'</p>'+link(first.originUrl||first.url,'기사·게시물 원문')+blocks);
   }
   function tipControls(){
-    const section=$('#tipControls');section.hidden=filtering!=='rumor';if(section.hidden)return;
-    section.innerHTML='<div role="group" aria-label="출처 유형">'+[['any','모든 출처'],['media','언론'],['people','기자·SNS'],['community','커뮤니티']].map(([key,title])=>'<button data-origin="'+key+'" aria-pressed="'+(key===tipSource)+'">'+title+'</button>').join('')+'</div>';
+    const section=$('#tipControls');
+    section.hidden=filtering!=='all'&&filtering!=='rumor';
+    if(section.hidden)return;
+    const sources=filtering==='rumor'?'<div role="group" aria-label="출처 유형">'+[['any','모든 출처'],['media','언론'],['people','기자·SNS'],['community','커뮤니티']].map(([key,title])=>'<button data-origin="'+key+'" aria-pressed="'+(key===tipSource)+'">'+title+'</button>').join('')+'</div>':'';
+    const canFilter=filtering==='all'||tipSource==='any'||tipSource==='community';
+    const quality='<div role="group" aria-label="커뮤니티 글 필터"><span class="meta-note">커뮤니티 글</span>'+
+      [['tips','이적 제보만'],['all','팬 반응 포함']].map(([key,label])=>'<button type="button" data-community="'+key+'" aria-pressed="'+((key==='all')===includeDiscussion)+'">'+label+'</button>').join('')+'</div>';
+    section.innerHTML=sources+(canFilter?quality:'');
   }
 
   function eventFromGroup(g){
@@ -297,6 +352,10 @@
     const b=e.target.closest('button');if(!b)return;
     if(b.dataset.mode){rosterMode=b.dataset.mode;save('rosterMode',rosterMode);showRoster()}
     if(b.dataset.tip){articleDetail(b.dataset.tip);return}
+    if(b.dataset.community){
+      includeDiscussion=b.dataset.community==='all';save('communityDiscussion',includeDiscussion);
+      limit=7;showTimeline();$('#tipControls [data-community="'+b.dataset.community+'"]')?.focus();return;
+    }
     if(b.dataset.origin){tipSource=b.dataset.origin;limit=7;showTimeline();return}
     if(b.dataset.person){personFlow(b.dataset.person);return}
     if(b.dataset.desk){deskMode=b.dataset.desk;sourceDesk();return}
@@ -357,3 +416,4 @@
   merge(savedFeed);render();routing();sync();setInterval(tick,1000);setInterval(sync,60000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();sync()}});
 })();
+
