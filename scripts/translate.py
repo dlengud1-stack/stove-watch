@@ -14,15 +14,20 @@ import venv
 BASE = "https://huggingface.co/gn64/M2M100_418M_CTranslate2/resolve/main/"
 MODEL_HASH = "a1826980fc5c037e69c7ac94fcb56c03001a66f380eb71863cc0a3879e71421b"
 CACHE = Path(os.environ.get("STOVE_MODEL_DIR") or Path.home() / ".cache" / "stovewatch" / "m2m100-v1")
-PACKAGES = ["ctranslate2==4.6.0", "sentencepiece==0.2.1", "langid==1.1.6"]
+PACKAGES = ["ctranslate2==4.9.0", "sentencepiece>=0.2.1,<0.3", "langid==1.1.6"]
 
 
 def runtime():
     env = CACHE / "venv"
     python = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-    marker = env / ".ready-4.6"
+    marker = env / ".ready-4.9"
     if not marker.exists():
-        venv.EnvBuilder(with_pip=True).create(env)
+        toolcache = os.environ.get("RUNNER_TOOL_CACHE")
+        stable = sorted(Path(toolcache).glob("Python/3.12.*/x64/bin/python")) if toolcache else []
+        if stable:
+            subprocess.run([str(stable[-1]), "-m", "venv", str(env)], check=True)
+        else:
+            venv.EnvBuilder(with_pip=True).create(env)
         subprocess.run([str(python), "-m", "pip", "install", "--disable-pip-version-check", *PACKAGES],
                        check=True, stdout=sys.stderr)
         marker.touch()
